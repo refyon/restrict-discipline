@@ -9,7 +9,7 @@ DSH（DeepSeek Harness）行为规范插件：约束 Agent 的文件操作与系
 3. **代理保护** — 禁止修改系统代理设置及 git/npm/yarn/pnpm/bun/pip 的 proxy 配置（含 `git config http.proxy`、`npm config set proxy`、`$env:http_proxy`、`netsh winhttp set proxy` 等），记录到 `log/<会话名>/denials.log`。
 4. **操作留痕** — 提供 `record_operation` 工具：把有实际效果的操作保存为 `scripts/<会话名>/` 下**可双击运行**的 `.cmd`（调用同名 `.ps1`），并维护 `index.md` 索引。
 5. **目录外确认** — 修改/删除项目目录以外的文件时弹出确认（ask）；**只读访问默认放行**（`read`/`grep`/`glob`/读取命令不打扰）。
-6. **会话摘要** — 提供 `record_summary` 工具：把每轮会话总结写入 `memory/<会话名>.txt`（覆盖旧摘要）；若助手未调用，轮次结束时自动生成结构化摘要兜底。
+6. **会话摘要** — 每轮对话结束时自动把会话总结写入 `memory/<会话名>.txt`（覆盖旧摘要）。
 7. **遍历排除** — 使用 `grep`/`glob` 遍历项目内容时主动排除 `.env`。
 
 ## 安装
