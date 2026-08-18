@@ -1,0 +1,51 @@
+{
+  "name": "restrict-discipline",
+  "version": "0.1.0",
+  "description": "DSH behavior-regulation plugin: blocks project-root file creation, protects the root .env, blocks proxy-setting changes, asks for confirmation on out-of-workspace modifications, records operations as runnable scripts and per-session summaries. Toggleable from Settings -> Plugins.",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node test/smoke-host.mjs"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-api-remotes"
+      ],
+      "platform": "web"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": ">=0.1.0-rc.0",
+    "@deepseek-ai/dsh-settings": ">=0.1.0-rc.0",
+    "@deepseek-ai/schemastery": "*",
+    "react": ">=18.0.0"
+  },
+  "license": "MIT",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "plugin",
+    "behavior",
+    "discipline",
+    "guardrails"
+  ]
+}

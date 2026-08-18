@@ -1,0 +1,8 @@
+# restrict-discipline bundle patch — 把 host 插件行插入 host 组成。
+#
+# 本插件不发布任何服务（无 ctx.provide），因此无需 isolate realm；它注册
+# 到 host 的 tools / settings / systemPrompt 作用域与事件监听上，覆盖所有会话。
+# 通过 `dsh plugin --profile <name> add restrict-discipline` 安装后由本层加载。
+- insert:
+    - id: restrict-discipline
+      name: 'restrict-discipline'
