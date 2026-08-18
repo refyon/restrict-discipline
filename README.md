@@ -18,8 +18,8 @@ DSH（DeepSeek Harness）行为规范插件：约束 Agent 的文件操作与系
 # 从 npm 安装
 dsh plugin --profile web add restrict-discipline
 
-# 或直接从 GitHub 安装
-dsh plugin --profile web add github:<你的用户名>/restrict-discipline
+# 或直接从 GitHub 安装（refyon 的公开仓库）
+dsh plugin --profile web add github:refyon/restrict-discipline
 ```
 
 > 其他 profile（`tui`、`headless` 等）同理：`dsh plugin --profile <name> add restrict-discipline`。

@@ -40,6 +40,14 @@
     "react": ">=18.0.0"
   },
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/refyon/restrict-discipline.git"
+  },
+  "homepage": "https://github.com/refyon/restrict-discipline",
+  "bugs": {
+    "url": "https://github.com/refyon/restrict-discipline/issues"
+  },
   "keywords": [
     "dsh",
     "deepseek-harness",
