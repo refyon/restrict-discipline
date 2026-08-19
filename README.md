@@ -11,7 +11,7 @@ DSH（DeepSeek Harness）行为规范插件：约束 Agent 的文件操作与系
 | 1 | 文件分类 | 新建文件必须放入对应目录（`scripts/`、`log/`、`docs/`、`memory/` 等），禁止在项目根目录创建文件 |
 | 2 | `.env` 保护 | 禁止读取/修改/删除/搜索项目根目录的 `.env`；违规访问被拦截并记录到 `log/<会话名>/env-access.log` |
 | 3 | 代理保护 | 禁止修改系统代理及 git/npm/yarn/pnpm/pip 的 proxy 配置；违规命令被拦截并记录到 `log/<会话名>/denials.log` |
-| 4 | 操作留痕 | 有实际效果的操作通过 `record_operation` 保存为 `scripts/<会话名>/` 下可双击运行的脚本（`.cmd` + `.ps1`），并维护 `index.md` 索引 |
+| 4 | 操作留痕与复用 | 执行有实际效果的操作前先用 `find_operation` 按关键词检索 `scripts/` 是否已有相同脚本，命中则直接运行复用；未命中再执行，并用 `record_operation` 保存为 `scripts/<会话名>/` 下可双击运行的脚本（`.cmd` + `.ps1`），维护 `index.md` 索引 |
 | 5 | 目录外确认 | 修改/删除项目目录以外的文件时请求用户确认；只读访问默认放行 |
 | 6 | 会话摘要 | 每轮对话结束自动将会话总结写入 `memory/<会话名>.txt`（覆盖旧摘要） |
 | 7 | 遍历排除 | `grep`/`glob` 遍历项目内容时主动排除 `.env` |

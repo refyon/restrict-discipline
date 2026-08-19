@@ -3,6 +3,7 @@
 //
 // 说明：测试使用通用占位路径（C:\workspace / D:\external），与任何真实机器无关。
 import { buildEnforcer } from '../lib/enforce.js'
+import { matchesKeyword, parsePs1, searchScripts } from '../lib/search.js'
 
 const toAbs = (p, cwd) => {
   const s = String(p)
@@ -38,8 +39,63 @@ function check(label, decision, expectedKind) {
   if (ok) { pass++; console.log('  PASS  ' + label) }
   else { fail++; console.log('  FAIL  ' + label + ' → got ' + JSON.stringify(decision)) }
 }
+function checkTrue(label, condition) {
+  if (condition) { pass++; console.log('  PASS  ' + label) }
+  else { fail++; console.log('  FAIL  ' + label + ' → got false') }
+}
 
 console.log('== restrict-discipline enforce 冒烟测试 ==')
+
+// 规则 4 复用：search 核心逻辑
+{
+  checkTrue('matchesKeyword 命中描述', matchesKeyword('build', 'run-build.cmd', '构建项目', 'npm run build'))
+  checkTrue('matchesKeyword 命中命令', matchesKeyword('push', 'x.cmd', '推送', 'git push origin main'))
+  checkTrue('matchesKeyword 大小写不敏感', matchesKeyword('GIT', 'x.cmd', '提交', 'git commit -m hi'))
+  checkTrue('matchesKeyword 未命中返回 false', !matchesKeyword('install', 'x.cmd', '构建', 'npm run build'))
+  checkTrue('parsePs1 提取描述与命令', (() => {
+    const { description, command } = parsePs1('# 推送 GitHub\n$env:GIT_SSH_COMMAND = "ssh"\ngit push origin main')
+    return description === '推送 GitHub' && command.includes('git push origin main')
+  })())
+
+  // searchScripts 用桩 fs 检索
+  const memFs = {
+    scripts: {
+      'sess-a': {
+        '01-push.cmd.ps1': '# 推送 GitHub\n$env:GIT_SSH_COMMAND = "ssh.exe"\ngit push origin main',
+        '02-build.cmd.ps1': '# 构建项目\nnpm run build',
+      },
+      'sess-b': {
+        '03-install.cmd.ps1': '# 安装依赖\npnpm install',
+      },
+    },
+  }
+  const flat = (dir) => {
+    const out = []
+    for (const name of Object.keys(dir)) {
+      const v = dir[name]
+      if (typeof v === 'string') out.push({ name, type: 'file', target: { displayPath: 'C:\\workspace\\scripts\\' + name, text: v } })
+      else out.push({ name, type: 'directory', target: { displayPath: 'C:\\workspace\\scripts\\' + name, sub: v } })
+    }
+    return out
+  }
+  const fsStub2 = {
+    async resolve(p, o) { return { displayPath: 'C:\\workspace\\' + p } },
+    async listDir(t) {
+      if (t.sub) return flat(t.sub)
+      if (t.displayPath.endsWith('scripts')) return flat(memFs.scripts)
+      return []
+    },
+    async readText(t) { return t.text || '' },
+  }
+  {
+    const r = await searchScripts({ resolve: fsStub2.resolve, listDir: fsStub2.listDir, readText: fsStub2.readText, cwd: 'C:\\workspace', keyword: 'push', limit: 8 })
+    checkTrue('searchScripts 命中 push（跨会话）', r.count === 1 && r.matches[0].session === 'sess-a' && r.matches[0].base === '01-push.cmd')
+    const r2 = await searchScripts({ resolve: fsStub2.resolve, listDir: fsStub2.listDir, readText: fsStub2.readText, cwd: 'C:\\workspace', keyword: 'install', limit: 8 })
+    checkTrue('searchScripts 命中 install（其他会话）', r2.count === 1 && r2.matches[0].session === 'sess-b')
+    const r3 = await searchScripts({ resolve: fsStub2.resolve, listDir: fsStub2.listDir, readText: fsStub2.readText, cwd: 'C:\\workspace', keyword: '不存在的词', limit: 8 })
+    checkTrue('searchScripts 未命中 count=0', r3.count === 0)
+  }
+}
 
 // 规则 1：根目录建文件
 {
