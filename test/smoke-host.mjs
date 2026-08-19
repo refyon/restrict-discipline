@@ -118,6 +118,26 @@ console.log('== restrict-discipline enforce 冒烟测试 ==')
   check('grep pattern .env → deny', await e(exec('grep', { pattern: '.env', path: '.' })), 'deny')
 }
 
+// 规则 2/3/1/5 误判回归：here-string（多行文档）内的 .env / 代理示例 / 根目录写入示例
+// 属于文档内容，不应触发拦截（此前 ENV_TOKEN_RE 对命令文本全局匹配导致误伤）
+{
+  const e = makeEnforcer()
+  const notesCmd = "$notes = @'\n## 功能\n\n2. **敏感文件保护** — 禁止读取/修改/删除/搜索项目根目录的 `.env` 文件\n'@\nSet-Content -Path C:\\workspace\\log\\notes.md -Value $notes"
+  check('here-string 文档含 .env 字样 → 放行', await e(exec('pwsh', { command: notesCmd })), undefined)
+  const proxyDoc = "$doc = @'\n# 教程\nnpm config set proxy http://127.0.0.1:8888\n'@\nSet-Content -Path C:\\workspace\\docs\\t.md -Value $doc"
+  check('here-string 文档含代理示例 → 放行', await e(exec('pwsh', { command: proxyDoc })), undefined)
+  const rootDoc = "$doc = @'\n# 说明\n创建文件 C:\\workspace\\root-test.txt\n'@\nWrite-Output $doc"
+  check('here-string 文档含根目录写入示例 → 放行', await e(exec('pwsh', { command: rootDoc })), undefined)
+  // 单行 commit message / echo 文本中提及 .env（后接路径分隔符或普通文本）不应误判
+  const commitMsg = 'git -C C:\\workspace commit -m "docs: mention .env/proxy handling in README"'
+  check('commit message 含 .env/proxy → 放行', await e(exec('pwsh', { command: commitMsg })), undefined)
+  const echoText = 'Write-Output "the root .env file should stay protected"'
+  check('echo 文本含 .env → 放行', await e(exec('pwsh', { command: echoText })), undefined)
+  // 真实访问仍拦截：.env 作为独立路径参数
+  check('git diff .env → deny', await e(exec('pwsh', { command: 'git diff .env' })), 'deny')
+  check('Get-ChildItem .env → deny', await e(exec('pwsh', { command: 'Get-ChildItem -Path .env' })), 'deny')
+}
+
 // 规则 3：代理设置
 {
   const e = makeEnforcer()
