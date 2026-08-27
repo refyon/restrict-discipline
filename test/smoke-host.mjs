@@ -4,6 +4,7 @@
 // 说明：测试使用通用占位路径（C:\workspace / D:\external），与任何真实机器无关。
 import { buildEnforcer } from '../lib/enforce.js'
 import { matchesKeyword, parsePs1, searchScripts } from '../lib/search.js'
+import { isNoise, textOf, clip, pickScriptLines } from '../lib/digest.js'
 
 const toAbs = (p, cwd) => {
   const s = String(p)
@@ -95,6 +96,25 @@ console.log('== restrict-discipline enforce 冒烟测试 ==')
     const r3 = await searchScripts({ resolve: fsStub2.resolve, listDir: fsStub2.listDir, readText: fsStub2.readText, cwd: 'C:\\workspace', keyword: '不存在的词', limit: 8 })
     checkTrue('searchScripts 未命中 count=0', r3.count === 0)
   }
+}
+
+// 规则 6 摘要净化（lib/digest.js）
+{
+  checkTrue('isNoise 识别 runtime context 快照', isNoise('Current runtime context. This snapshot supersedes earlier runtime-context snapshots.'))
+  checkTrue('isNoise 识别 system-reminder', isNoise('<system-reminder> A skill is a reusable set of task-specific instructions.'))
+  checkTrue('isNoise 识别 checkpoint', isNoise('This is an automatically generated checkpoint condensing an earlier span.'))
+  checkTrue('isNoise 放行正常对话', !isNoise('请把结果保存为excel格式文件'))
+  checkTrue('textOf 提取文本块', textOf([{ type: 'text', text: 'a' }, { type: 'text', text: 'b' }]) === 'a b')
+  checkTrue('clip 长文本截断到 150 字符', clip('x'.repeat(200)).length <= 151)
+  checkTrue('clip 短文本不截断', clip('hello') === 'hello')
+  const idx = [
+    '- [a.cmd](a.cmd) — 第一条',
+    '- [b.cmd](b.cmd) — 第二条',
+    '- [a.cmd](a.cmd) — 重复条目（应去重）',
+    '其他行',
+  ].join('\n')
+  const picked = pickScriptLines(idx)
+  checkTrue('pickScriptLines 提取并去重', picked.length === 2 && picked[0].includes('a.cmd') && picked[1].includes('b.cmd') && !picked[0].includes('重复'))
 }
 
 // 规则 1：根目录建文件
