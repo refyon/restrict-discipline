@@ -3,7 +3,7 @@
 //
 // 说明：测试使用通用占位路径（C:\workspace / D:\external），与任何真实机器无关。
 import { buildEnforcer } from '../lib/enforce.js'
-import { matchesKeyword, parsePs1, searchScripts } from '../lib/search.js'
+import { matchesKeyword, parsePs1, searchScripts, tokenize } from '../lib/search.js'
 import { isNoise, textOf, clip, pickScriptLines } from '../lib/digest.js'
 
 const toAbs = (p, cwd) => {
@@ -95,6 +95,83 @@ console.log('== restrict-discipline enforce 冒烟测试 ==')
     checkTrue('searchScripts 命中 install（其他会话）', r2.count === 1 && r2.matches[0].session === 'sess-b')
     const r3 = await searchScripts({ resolve: fsStub2.resolve, listDir: fsStub2.listDir, readText: fsStub2.readText, cwd: 'C:\\workspace', keyword: '不存在的词', limit: 8 })
     checkTrue('searchScripts 未命中 count=0', r3.count === 0)
+  }
+}
+
+// 规则 4 检索 P0：倒排索引 + BM25（分词 / 排名 / 缓存失效 / 空关键词回退）
+{
+  checkTrue('tokenize ASCII 小写分词', JSON.stringify(tokenize('Npm Run Build')) === JSON.stringify(['npm', 'run', 'build']))
+  checkTrue('tokenize 中文 bigram', JSON.stringify(tokenize('打包发布')) === JSON.stringify(['打包', '包发', '发布']))
+  checkTrue('tokenize 过滤符号与单字符 ASCII', JSON.stringify(tokenize('a b12! 中')) === JSON.stringify(['b12', '中']))
+
+  // 迷你 fs：resolve 返回稳定对象（缓存 key 稳定）；holder.tree 可变，用于失效测试
+  const mkFs = (holder, pathKey, counter) => ({
+    async resolve(p) { return { pathKey: pathKey + '\\' + p } },
+    async listDir(t) {
+      const dir = (t && t.sub !== undefined) ? t.sub : holder.tree
+      if (!dir || typeof dir !== 'object') return []
+      return Object.keys(dir).map((name) => {
+        const v = dir[name]
+        if (typeof v === 'string') return { name, type: 'file', target: { text: v } }
+        return { name, type: 'directory', target: { sub: v } }
+      })
+    },
+    async readText(t) { if (counter) counter.reads++; return (t && t.text) || '' },
+  })
+
+  // 排名：文件名字段权重(×2)高于命令字段(×1)，同词命中应把文件名命中排前面
+  {
+    const holder = { tree: {
+      '04-build.cmd.ps1': '# 构建项目\necho hi',
+      '05-x.cmd.ps1': '# 无关\nnpm run build',
+    } }
+    const fs = mkFs(holder, 'C:\\bench1')
+    const r = await searchScripts({ resolve: fs.resolve, listDir: fs.listDir, readText: fs.readText, cwd: 'C:\\bench1', keyword: 'build', limit: 8 })
+    checkTrue('BM25 文件名命中排名优先', r.count === 2 && r.matches[0].base === '04-build.cmd')
+  }
+
+  // 中文 bigram 跨词命中：旧子串匹配失配（"打包发布" ⊄ "发布编译"），分词后共享 "发布" 命中
+  {
+    const holder = { tree: { '06-release.cmd.ps1': '# 发布编译环境脚本\necho hi' } }
+    const fs = mkFs(holder, 'C:\\bench2')
+    const r = await searchScripts({ resolve: fs.resolve, listDir: fs.listDir, readText: fs.readText, cwd: 'C:\\bench2', keyword: '打包发布', limit: 8 })
+    checkTrue('中文 bigram 跨词命中', r.count === 1 && r.matches[0].base === '06-release.cmd')
+  }
+
+  // 缓存：内容未变时零文件读取；新增文件触发索引重建
+  {
+    const holder = { tree: { '07-a.cmd.ps1': '# 构建\nnpm run build' } }
+    const counter = { reads: 0 }
+    const fs = mkFs(holder, 'C:\\bench3', counter)
+    const dep = { resolve: fs.resolve, listDir: fs.listDir, readText: fs.readText }
+    const r1 = await searchScripts({ ...dep, cwd: 'C:\\bench3', keyword: 'build', limit: 8 })
+    const afterFirst = counter.reads
+    checkTrue('首次查询建索引并读取文件', r1.count === 1 && afterFirst >= 1)
+    const r2 = await searchScripts({ ...dep, cwd: 'C:\\bench3', keyword: 'build', limit: 8 })
+    checkTrue('缓存命中零文件读取', r2.count === 1 && counter.reads === afterFirst)
+    holder.tree['08-install.cmd.ps1'] = '# 安装依赖\npnpm install'
+    const r3 = await searchScripts({ ...dep, cwd: 'C:\\bench3', keyword: 'install', limit: 8 })
+    checkTrue('新增文件触发重建并可检索', r3.count === 1 && r3.matches[0].base === '08-install.cmd')
+  }
+
+  // 空关键词分词（纯符号）回退旧全量子串扫描
+  {
+    const holder = { tree: { '09-x.cmd.ps1': '# 特殊\necho !!' } }
+    const fs = mkFs(holder, 'C:\\bench4')
+    const r = await searchScripts({ resolve: fs.resolve, listDir: fs.listDir, readText: fs.readText, cwd: 'C:\\bench4', keyword: '!', limit: 8 })
+    checkTrue('纯符号关键词回退子串扫描', r.count === 1)
+  }
+
+  // limit 截断返回、count 为全部命中数
+  {
+    const holder = { tree: {
+      '10-a.cmd.ps1': '# 一\nnode test a',
+      '11-a.cmd.ps1': '# 二\nnode test a',
+      '12-a.cmd.ps1': '# 三\nnode test a',
+    } }
+    const fs = mkFs(holder, 'C:\\bench5')
+    const r = await searchScripts({ resolve: fs.resolve, listDir: fs.listDir, readText: fs.readText, cwd: 'C:\\bench5', keyword: 'test', limit: 2 })
+    checkTrue('limit 截断且 count 为全部命中', r.count === 3 && r.matches.length === 2)
   }
 }
 
