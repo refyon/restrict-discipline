@@ -1,6 +1,6 @@
 {
   "name": "restrict-discipline",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "DSH behavior-regulation plugin: blocks project-root file creation, protects the root .env, blocks proxy-setting changes, asks for confirmation on out-of-workspace modifications, records operations as runnable scripts and per-session summaries. Toggleable from Settings -> Plugins.",
   "type": "module",
   "main": "lib/index.js",
