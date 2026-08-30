@@ -4,6 +4,7 @@
 // 说明：测试使用通用占位路径（C:\workspace / D:\external），与任何真实机器无关。
 import { buildEnforcer } from '../lib/enforce.js'
 import { matchesKeyword, parsePs1, searchScripts, tokenize } from '../lib/search.js'
+import { rankMemoryFiles, renderMemoryBlock } from '../lib/memory.js'
 import { isNoise, textOf, clip, pickScriptLines } from '../lib/digest.js'
 
 const toAbs = (p, cwd) => {
@@ -173,6 +174,23 @@ console.log('== restrict-discipline enforce 冒烟测试 ==')
     const r = await searchScripts({ resolve: fs.resolve, listDir: fs.listDir, readText: fs.readText, cwd: 'C:\\bench5', keyword: 'test', limit: 2 })
     checkTrue('limit 截断且 count 为全部命中', r.count === 3 && r.matches.length === 2)
   }
+}
+
+// 规则 16 会话记忆注入（lib/memory.js）
+{
+  const files = [
+    { name: '发布相关.txt', text: '# 摘要 A\n发布 v0.4.0 流程：tag、push、gh release create' },
+    { name: '构建相关.txt', text: '# 摘要 B\nnpm run build 与 CI 发布方式' },
+    { name: '本会话.txt', text: '# 摘要 C\n当前会话自身内容（应被排除）' },
+  ]
+  const ranked = rankMemoryFiles(files, '如何发布 release', { limit: 3, excludeName: '本会话.txt' })
+  checkTrue('rankMemoryFiles 排除本会话并按相关度排序', ranked.length === 2 && ranked[0].name === '发布相关.txt')
+  checkTrue('rankMemoryFiles 纯符号查询返回空', rankMemoryFiles(files, '!!', { limit: 3 }).length === 0)
+  checkTrue('rankMemoryFiles 空文件集返回空', rankMemoryFiles([], '发布').length === 0)
+  checkTrue('rankMemoryFiles 排除项不参与', rankMemoryFiles(files, '发布', { limit: 3, excludeName: '发布相关.txt' }).every((f) => f.name !== '发布相关.txt'))
+  const block = renderMemoryBlock(ranked, { maxChars: 40 })
+  checkTrue('renderMemoryBlock 含标题且截断', block.includes('【历史记忆') && block.includes('发布相关.txt') && block.length < 300)
+  checkTrue('renderMemoryBlock 空输入返回空串', renderMemoryBlock([]) === '')
 }
 
 // 规则 6 摘要净化（lib/digest.js）
