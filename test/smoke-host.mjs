@@ -4,7 +4,7 @@
 // 说明：测试使用通用占位路径（C:\workspace / D:\external），与任何真实机器无关。
 import { buildEnforcer } from '../lib/enforce.js'
 import { matchesKeyword, parsePs1, searchScripts, tokenize } from '../lib/search.js'
-import { rankMemoryFiles, renderMemoryBlock, stripDigestBoilerplate, normalizeMemoryQuery } from '../lib/memory.js'
+import { rankMemoryFiles, renderMemoryBlock, stripDigestBoilerplate, normalizeMemoryQuery, buildRecallNotice } from '../lib/memory.js'
 import { isNoise, textOf, clip, pickScriptLines } from '../lib/digest.js'
 
 const toAbs = (p, cwd) => {
@@ -203,6 +203,8 @@ console.log('== restrict-discipline enforce 冒烟测试 ==')
     return s.includes('[用户] 黑苹果 QEMU 安装') && !s.includes('摘要来源') && !s.includes('更新时间') && !s.includes('会话 ID')
   })())
   checkTrue('normalizeMemoryQuery 剔除停用词', normalizeMemoryQuery('重启服务 验证 是否已更新') === '重启服务 验证 是否已')
+  const notice = buildRecallNotice(ranked)
+  checkTrue('buildRecallNotice 含文件清单与注记', notice.reasoning.includes('发布相关.txt') && notice.reasoning.includes('构建相关.txt') && notice.text.length > 0)
 }
 
 // 规则 6 摘要净化（lib/digest.js）
