@@ -4,7 +4,7 @@
 // 说明：测试使用通用占位路径（C:\workspace / D:\external），与任何真实机器无关。
 import { buildEnforcer } from '../lib/enforce.js'
 import { matchesKeyword, parsePs1, searchScripts, tokenize } from '../lib/search.js'
-import { rankMemoryFiles, renderMemoryBlock } from '../lib/memory.js'
+import { rankMemoryFiles, renderMemoryBlock, stripDigestBoilerplate, normalizeMemoryQuery } from '../lib/memory.js'
 import { isNoise, textOf, clip, pickScriptLines } from '../lib/digest.js'
 
 const toAbs = (p, cwd) => {
@@ -191,6 +191,18 @@ console.log('== restrict-discipline enforce 冒烟测试 ==')
   const block = renderMemoryBlock(ranked, { maxChars: 40 })
   checkTrue('renderMemoryBlock 含标题且截断', block.includes('【历史记忆') && block.includes('发布相关.txt') && block.length < 300)
   checkTrue('renderMemoryBlock 空输入返回空串', renderMemoryBlock([]) === '')
+
+  // 命中质量：样板行剥离 + 查询停用词（样板词不得主导排名）
+  const boiler = '# 会话摘要 — 无关\n会话 ID: x-123\n更新时间: 2026-08-30T00:00:00.000Z\n摘要来源: restrict-discipline 自动生成\n消息统计：用户 1 条\n最近对话（最多 6 条）：\n[用户] 黑苹果 QEMU 安装'
+  const topical = '# 会话摘要 — 部署发布\n会话 ID: y-456\n更新时间: 2026-08-30T00:00:00.000Z\n摘要来源: restrict-discipline 自动生成\n最近对话（最多 6 条）：\n[用户] 重启服务验证部署效果'
+  const r = rankMemoryFiles([{ name: '样板A.txt', text: boiler }, { name: '部署会话.txt', text: topical }], '重启服务 验证 restrict-discipline 是否已更新', { limit: 3 })
+  checkTrue('样板词不主导排名（命中部署会话）', r.length === 1 && r[0].name === '部署会话.txt')
+  checkTrue('纯样板查询返回空', rankMemoryFiles([{ name: '样板A.txt', text: boiler }], '更新时间 消息统计', { limit: 3 }).length === 0)
+  checkTrue('stripDigestBoilerplate 剥离样板行', (() => {
+    const s = stripDigestBoilerplate(boiler)
+    return s.includes('[用户] 黑苹果 QEMU 安装') && !s.includes('摘要来源') && !s.includes('更新时间') && !s.includes('会话 ID')
+  })())
+  checkTrue('normalizeMemoryQuery 剔除停用词', normalizeMemoryQuery('重启服务 验证 是否已更新') === '重启服务 验证 是否已')
 }
 
 // 规则 6 摘要净化（lib/digest.js）
