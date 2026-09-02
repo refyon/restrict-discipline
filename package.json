@@ -1,7 +1,7 @@
 {
   "name": "restrict-discipline",
-  "version": "0.5.5",
-  "description": "DSH behavior-regulation plugin: blocks project-root file creation, protects the root .env, blocks proxy-setting changes, asks for confirmation on out-of-workspace modifications, records operations as runnable scripts and per-session summaries. Toggleable from Settings -> Plugins.",
+  "version": "0.6.0",
+  "description": "DSH behavior-regulation plugin: four rules (mandatory constraints / token saving / markdown session memory / coding discipline). Blocks project-root file creation, protects the root .env, blocks proxy-setting changes, asks confirmation for out-of-workspace modifications, records operations as runnable scripts, and keeps a per-session Markdown memory store (remember/recall/forget/stats/export/gc). Toggleable from Settings -> Plugins.",
   "type": "module",
   "main": "lib/index.js",
   "exports": {

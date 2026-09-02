@@ -4,8 +4,11 @@
 // 说明：测试使用通用占位路径（C:\workspace / D:\external），与任何真实机器无关。
 import { buildEnforcer } from '../lib/enforce.js'
 import { matchesKeyword, parsePs1, searchScripts, tokenize } from '../lib/search.js'
-import { rankMemoryFiles, renderMemoryBlock, stripDigestBoilerplate, normalizeMemoryQuery, buildRecallNotice } from '../lib/memory.js'
+import { rankMemoryFiles, renderMemoryBlock, renderMemoryIndex, stripDigestBoilerplate, normalizeMemoryQuery, buildRecallNotice } from '../lib/memory.js'
 import { isNoise, textOf, clip, pickScriptLines } from '../lib/digest.js'
+import { RULES_TEXT } from '../lib/rules.js'
+import { splitFile, rebuildFile, appendEntry, forgetEntry, purgeArchived, countEntries, entryLine, parseWhen, parseEntryLine, firstTitle } from '../lib/memfile.js'
+import { redactSecrets } from '../lib/redact.js'
 
 const toAbs = (p, cwd) => {
   const s = String(p)
@@ -293,6 +296,74 @@ console.log('== restrict-discipline enforce 冒烟测试 ==')
   check('禁用时 write 根目录 → 放行', await e(exec('write', { file_path: 'root.txt', content: 'x' })), undefined)
   check('禁用时 .env → 放行', await e(exec('pwsh', { command: 'Get-Content .env' })), undefined)
   check('禁用时 代理 → 放行', await e(exec('pwsh', { command: 'git config --global http.proxy http://x' })), undefined)
+}
+
+// v0.6 规则四元重构（lib/rules.js）
+{
+  checkTrue('规则文本含 4 条主规则', ['1. 强制约束', '2. Token 节约', '3. 会话记忆', '4. 编码纪律'].every((h) => RULES_TEXT.includes(h)))
+  checkTrue('规则文本不再含旧 16 条编号', !RULES_TEXT.includes('16. 会话记忆自动注入') && !RULES_TEXT.includes('【Token 节约补充'))
+  checkTrue('规则文本含新旧子项编号', RULES_TEXT.includes('1.1 文件分类') && RULES_TEXT.includes('1.7 遍历排除') && RULES_TEXT.includes('2.7 失败收敛') && RULES_TEXT.includes('3.3 显式记忆工具') && RULES_TEXT.includes('4.4 目标驱动'))
+  checkTrue('规则文本含记忆 Markdown 说明', RULES_TEXT.includes('memory/*.md'))
+}
+
+// v0.6 memory/*.md 记忆文档纯逻辑（lib/memfile.js）
+{
+  const iso = '2026-09-02T00:00:00.000Z'
+  const line = entryLine({ id: 'mem-a1', iso, content: '决策：用 Markdown 存记忆', source: 'sess-1', turn: 3, tags: ['决策'] })
+  checkTrue('entryLine 生成条目行', line.startsWith('- [mem-a1] 2026-09-02T00:00:00.000Z 决策：用 Markdown 存记忆（来源: sess-1 · 轮次 3） · 标签 决策'))
+  checkTrue('parseWhen 解析时间', parseWhen(line) === Date.parse(iso))
+  const p = parseEntryLine(line)
+  checkTrue('parseEntryLine 解析字段', !!p && p.id === 'mem-a1' && p.content.includes('Markdown'))
+  const base = '# 会话摘要 — A\n\n## 消息统计\n\n用户 1 条\n'
+  let t = appendEntry(base, line)
+  checkTrue('appendEntry 追加到记忆条目节', t.includes('## 记忆条目') && t.includes('- [mem-a1]') && t.includes('## 消息统计'))
+  checkTrue('countEntries 计数', countEntries(t) === 1)
+  const s = splitFile(t)
+  checkTrue('splitFile 分节', s.digest.length > 0 && s.entries.length === 1 && s.archived.length === 0)
+  checkTrue('firstTitle 提取标题', firstTitle(t) === '会话摘要 — A')
+  const r = forgetEntry(t, 'mem-a1')
+  checkTrue('forgetEntry 软删移入归档', r.moved === 1 && r.text.includes('## 已归档条目') && countEntries(r.text) === 0)
+  const g = purgeArchived(r.text, Date.parse('2026-12-01T00:00:00.000Z'), 30)
+  checkTrue('purgeArchived 超期清除', g.purged === 1 && !g.text.includes('mem-a1'))
+  const keep = purgeArchived(r.text, Date.parse('2026-09-10T00:00:00.000Z'), 30)
+  checkTrue('purgeArchived 未超期保留', keep.purged === 0 && keep.text.includes('mem-a1'))
+  checkTrue('rebuildFile 全空返回空串', rebuildFile({ digest: [], entries: [], archived: [] }) === '')
+  const merged = rebuildFile({ digest: ['# 会话摘要 — A2'], entries: s.entries, archived: s.archived })
+  checkTrue('digest 重写保留记忆条目节', merged.includes('# 会话摘要 — A2') && merged.includes('- [mem-a1]'))
+  const legacy = rebuildFile({ digest: [], entries: ['- [mem-x] 2026-09-01T00:00:00.000Z 只有条目'], archived: [] })
+  checkTrue('rebuildFile 无 digest 时仍保留条目', legacy.startsWith('## 记忆条目'))
+}
+
+// v0.6 秘密脱敏（lib/redact.js）
+{
+  const c = redactSecrets('api key: sk-abcdef1234567890 和 Bearer xyz1234567890abcde')
+  checkTrue('redactSecrets 脱敏 sk-/Bearer', !c.text.includes('sk-abcdef') && !c.text.includes('xyz1234567') && c.count >= 2 && c.text.includes('<REDACTED:'))
+  const kv = redactSecrets('export SECRET="hunter2token" ok')
+  checkTrue('redactSecrets 掩码 key=value 保留键名', kv.text.includes('SECRET=') && !kv.text.includes('hunter2token'))
+  const jwt = redactSecrets('token eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c')
+  checkTrue('redactSecrets 掩码 JWT', !jwt.text.includes('eyJhbGciOiJIUzI1NiJ9') && jwt.count >= 1)
+  const pem = redactSecrets('-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANB\n-----END PRIVATE KEY-----')
+  checkTrue('redactSecrets 掩码 PEM 块', pem.count === 1 && !pem.text.includes('MIIEvQIBADANB'))
+  checkTrue('redactSecrets 明文原样返回', redactSecrets('npm run build 正常文本').text === 'npm run build 正常文本')
+}
+
+// v0.6 渐进披露索引块 + 扩展名兼容排除 + 时间衰减（lib/memory.js）
+{
+  const files = [
+    { name: '发布相关.md', text: '# 会话摘要 — 发布 v0.4\n## 最近对话\n[用户] 打 tag 推送触发 CI' },
+    { name: '本会话.md', text: '# 会话摘要 — 本会话自身\n内容' },
+    { name: '旧会话.txt', text: '# 会话摘要 — 旧会话\n其他内容' },
+  ]
+  const r = rankMemoryFiles(files, '如何发布 tag 并推送触发 CI', { limit: 3, excludeName: '本会话.md' })
+  checkTrue('excludeName 忽略扩展名排除', r.length === 1 && r[0].name === '发布相关.md')
+  const blk = renderMemoryIndex(r)
+  checkTrue('renderMemoryIndex 渐进披露：只注标题一行', blk.startsWith('【历史记忆') && blk.includes('发布相关.md') && blk.length < 700 && !blk.includes('打 tag 推送触发 CI'))
+  checkTrue('renderMemoryIndex 空输入返回空串', renderMemoryIndex([]) === '')
+  const oldF = { name: '旧文件.md', text: '# A\n发布 v0.4.0 的旧流程细节', ts: Date.now() - 200 * 86400000 }
+  const newF = { name: '新文件.md', text: '# B\n发布 v0.4.0 的新流程', ts: Date.now() }
+  const ranked2 = rankMemoryFiles([oldF, newF], '发布 v0.4.0 流程', { limit: 2 })
+  checkTrue('时间衰减：新记忆排前', ranked2.length === 2 && ranked2[0].name === '新文件.md')
+  checkTrue('rankMemoryFiles 无 ts 不衰减（旧行为）', rankMemoryFiles([oldF], '发布 v0.4.0 流程', { limit: 1 }).length === 1)
 }
 
 console.log('')
