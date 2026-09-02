@@ -16,7 +16,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node test/smoke-host.mjs"
+    "test": "node test/smoke-host.mjs && node test/integration-host.mjs"
   },
   "dsh": {
     "bundle": {
