@@ -4,7 +4,7 @@
 // 说明：测试使用通用占位路径（C:\workspace / D:\external），与任何真实机器无关。
 import { buildEnforcer } from '../lib/enforce.js'
 import { matchesKeyword, parsePs1, searchScripts, tokenize } from '../lib/search.js'
-import { rankMemoryFiles, renderMemoryBlock, renderMemoryIndex, stripDigestBoilerplate, normalizeMemoryQuery, buildRecallNotice } from '../lib/memory.js'
+import { rankMemoryFiles, renderMemoryIndex, stripDigestBoilerplate, normalizeMemoryQuery, buildRecallNotice } from '../lib/memory.js'
 import { isNoise, textOf, clip, pickScriptLines } from '../lib/digest.js'
 import { RULES_TEXT } from '../lib/rules.js'
 import { splitFile, rebuildFile, appendEntry, forgetEntry, purgeArchived, countEntries, entryLine, parseWhen, parseEntryLine, firstTitle } from '../lib/memfile.js'
@@ -182,32 +182,29 @@ console.log('== restrict-discipline enforce 冒烟测试 ==')
 // 规则 16 会话记忆注入（lib/memory.js）
 {
   const files = [
-    { name: '发布相关.txt', text: '# 摘要 A\n发布 v0.4.0 流程：tag、push、gh release create' },
-    { name: '构建相关.txt', text: '# 摘要 B\nnpm run build 与 CI 发布方式' },
-    { name: '本会话.txt', text: '# 摘要 C\n当前会话自身内容（应被排除）' },
+    { name: '发布相关.md', text: '# 摘要 A\n发布 v0.4.0 流程：tag、push、gh release create' },
+    { name: '构建相关.md', text: '# 摘要 B\nnpm run build 与 CI 发布方式' },
+    { name: '本会话.md', text: '# 摘要 C\n当前会话自身内容（应被排除）' },
   ]
-  const ranked = rankMemoryFiles(files, '如何发布 release', { limit: 3, excludeName: '本会话.txt' })
-  checkTrue('rankMemoryFiles 排除本会话并按相关度排序', ranked.length === 2 && ranked[0].name === '发布相关.txt')
+  const ranked = rankMemoryFiles(files, '如何发布 release', { limit: 3, excludeName: '本会话.md' })
+  checkTrue('rankMemoryFiles 排除本会话并按相关度排序', ranked.length === 2 && ranked[0].name === '发布相关.md')
   checkTrue('rankMemoryFiles 纯符号查询返回空', rankMemoryFiles(files, '!!', { limit: 3 }).length === 0)
   checkTrue('rankMemoryFiles 空文件集返回空', rankMemoryFiles([], '发布').length === 0)
-  checkTrue('rankMemoryFiles 排除项不参与', rankMemoryFiles(files, '发布', { limit: 3, excludeName: '发布相关.txt' }).every((f) => f.name !== '发布相关.txt'))
-  const block = renderMemoryBlock(ranked, { maxChars: 40 })
-  checkTrue('renderMemoryBlock 含标题且截断', block.includes('【历史记忆') && block.includes('发布相关.txt') && block.length < 300)
-  checkTrue('renderMemoryBlock 空输入返回空串', renderMemoryBlock([]) === '')
+  checkTrue('rankMemoryFiles 排除项不参与', rankMemoryFiles(files, '发布', { limit: 3, excludeName: '发布相关.md' }).every((f) => f.name !== '发布相关.md'))
 
   // 命中质量：样板行剥离 + 查询停用词（样板词不得主导排名）
   const boiler = '# 会话摘要 — 无关\n会话 ID: x-123\n更新时间: 2026-08-30T00:00:00.000Z\n摘要来源: restrict-discipline 自动生成\n消息统计：用户 1 条\n最近对话（最多 6 条）：\n[用户] 黑苹果 QEMU 安装'
   const topical = '# 会话摘要 — 部署发布\n会话 ID: y-456\n更新时间: 2026-08-30T00:00:00.000Z\n摘要来源: restrict-discipline 自动生成\n最近对话（最多 6 条）：\n[用户] 重启服务验证部署效果'
-  const r = rankMemoryFiles([{ name: '样板A.txt', text: boiler }, { name: '部署会话.txt', text: topical }], '重启服务 验证 restrict-discipline 是否已更新', { limit: 3 })
-  checkTrue('样板词不主导排名（命中部署会话）', r.length === 1 && r[0].name === '部署会话.txt')
-  checkTrue('纯样板查询返回空', rankMemoryFiles([{ name: '样板A.txt', text: boiler }], '更新时间 消息统计', { limit: 3 }).length === 0)
+  const r = rankMemoryFiles([{ name: '样板A.md', text: boiler }, { name: '部署会话.md', text: topical }], '重启服务 验证 restrict-discipline 是否已更新', { limit: 3 })
+  checkTrue('样板词不主导排名（命中部署会话）', r.length === 1 && r[0].name === '部署会话.md')
+  checkTrue('纯样板查询返回空', rankMemoryFiles([{ name: '样板A.md', text: boiler }], '更新时间 消息统计', { limit: 3 }).length === 0)
   checkTrue('stripDigestBoilerplate 剥离样板行', (() => {
     const s = stripDigestBoilerplate(boiler)
     return s.includes('[用户] 黑苹果 QEMU 安装') && !s.includes('摘要来源') && !s.includes('更新时间') && !s.includes('会话 ID')
   })())
   checkTrue('normalizeMemoryQuery 剔除停用词', normalizeMemoryQuery('重启服务 验证 是否已更新') === '重启服务 验证 是否已')
   const notice = buildRecallNotice(ranked)
-  checkTrue('buildRecallNotice 含文件清单与注记', notice.reasoning.includes('发布相关.txt') && notice.reasoning.includes('构建相关.txt') && notice.text.length > 0)
+  checkTrue('buildRecallNotice 含文件清单与注记', notice.reasoning.includes('发布相关.md') && notice.reasoning.includes('构建相关.md') && notice.text.length > 0)
 }
 
 // 规则 6 摘要净化（lib/digest.js）
@@ -352,10 +349,10 @@ console.log('== restrict-discipline enforce 冒烟测试 ==')
   const files = [
     { name: '发布相关.md', text: '# 会话摘要 — 发布 v0.4\n## 最近对话\n[用户] 打 tag 推送触发 CI' },
     { name: '本会话.md', text: '# 会话摘要 — 本会话自身\n内容' },
-    { name: '旧会话.txt', text: '# 会话摘要 — 旧会话\n其他内容' },
+    { name: '旧会话.md', text: '# 会话摘要 — 旧会话\n其他内容' },
   ]
   const r = rankMemoryFiles(files, '如何发布 tag 并推送触发 CI', { limit: 3, excludeName: '本会话.md' })
-  checkTrue('excludeName 忽略扩展名排除', r.length === 1 && r[0].name === '发布相关.md')
+  checkTrue('excludeName 排除本会话', r.length === 1 && r[0].name === '发布相关.md')
   const blk = renderMemoryIndex(r)
   checkTrue('renderMemoryIndex 渐进披露：只注标题一行', blk.startsWith('【历史记忆') && blk.includes('发布相关.md') && blk.length < 700 && !blk.includes('打 tag 推送触发 CI'))
   checkTrue('renderMemoryIndex 空输入返回空串', renderMemoryIndex([]) === '')
