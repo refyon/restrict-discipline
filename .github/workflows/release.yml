@@ -1,0 +1,43 @@
+name: release
+
+# 触发条件：
+#   - 推送 v* 标签（如 v1.2.3）：先跑测试门禁（smoke + integration，零依赖），
+#     通过后自动创建 GitHub Release（notes 从 commit 生成）
+#   - 手动触发（workflow_dispatch）：仅跑测试，不创建 Release
+#
+# restrict-discipline 为纯 JS 插件（无构建产物/无二进制资产），GitHub Release
+# 仅作版本归档与发布入口；实际消费方式为
+#   dsh plugin --profile web add github:refyon/restrict-discipline
+# （pnpm 直接从 git 仓库拉取，不依赖 Release 资产）。
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run tests (smoke + integration, zero deps)
+        run: |
+          node test/smoke-host.mjs
+          node test/integration-host.mjs
+
+      - name: Create GitHub Release (tag push only)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
