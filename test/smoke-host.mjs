@@ -4,10 +4,10 @@
 // 说明：测试使用通用占位路径（C:\workspace / D:\external），与任何真实机器无关。
 import { buildEnforcer } from '../lib/enforce.js'
 import { matchesKeyword, parsePs1, searchScripts, tokenize } from '../lib/search.js'
-import { rankMemoryFiles, renderMemoryIndex, stripDigestBoilerplate, normalizeMemoryQuery, buildRecallNotice } from '../lib/memory.js'
+import { renderLoadBlock, renderRecallBlock, splitSections, detectShortcuts, recallSections, capLoad } from '../lib/memload.js'
 import { isNoise, textOf, clip, pickScriptLines } from '../lib/digest.js'
 import { RULES_TEXT } from '../lib/rules.js'
-import { splitFile, rebuildFile, appendEntry, forgetEntry, purgeArchived, countEntries, entryLine, parseWhen, parseEntryLine, firstTitle } from '../lib/memfile.js'
+import { splitFile, rebuildFile, appendEntry, appendMemoryEntry, entryLine, parseWhen, parseEntryLine } from '../lib/memfile.js'
 import { redactSecrets } from '../lib/redact.js'
 
 const toAbs = (p, cwd) => {
@@ -179,34 +179,6 @@ console.log('== restrict-discipline enforce 冒烟测试 ==')
   }
 }
 
-// 规则 16 会话记忆注入（lib/memory.js）
-{
-  const files = [
-    { name: '发布相关.md', text: '# 摘要 A\n发布 v0.4.0 流程：tag、push、gh release create' },
-    { name: '构建相关.md', text: '# 摘要 B\nnpm run build 与 CI 发布方式' },
-    { name: '本会话.md', text: '# 摘要 C\n当前会话自身内容（应被排除）' },
-  ]
-  const ranked = rankMemoryFiles(files, '如何发布 release', { limit: 3, excludeName: '本会话.md' })
-  checkTrue('rankMemoryFiles 排除本会话并按相关度排序', ranked.length === 2 && ranked[0].name === '发布相关.md')
-  checkTrue('rankMemoryFiles 纯符号查询返回空', rankMemoryFiles(files, '!!', { limit: 3 }).length === 0)
-  checkTrue('rankMemoryFiles 空文件集返回空', rankMemoryFiles([], '发布').length === 0)
-  checkTrue('rankMemoryFiles 排除项不参与', rankMemoryFiles(files, '发布', { limit: 3, excludeName: '发布相关.md' }).every((f) => f.name !== '发布相关.md'))
-
-  // 命中质量：样板行剥离 + 查询停用词（样板词不得主导排名）
-  const boiler = '# 会话摘要 — 无关\n会话 ID: x-123\n更新时间: 2026-08-30T00:00:00.000Z\n摘要来源: restrict-discipline 自动生成\n消息统计：用户 1 条\n最近对话（最多 6 条）：\n[用户] 黑苹果 QEMU 安装'
-  const topical = '# 会话摘要 — 部署发布\n会话 ID: y-456\n更新时间: 2026-08-30T00:00:00.000Z\n摘要来源: restrict-discipline 自动生成\n最近对话（最多 6 条）：\n[用户] 重启服务验证部署效果'
-  const r = rankMemoryFiles([{ name: '样板A.md', text: boiler }, { name: '部署会话.md', text: topical }], '重启服务 验证 restrict-discipline 是否已更新', { limit: 3 })
-  checkTrue('样板词不主导排名（命中部署会话）', r.length === 1 && r[0].name === '部署会话.md')
-  checkTrue('纯样板查询返回空', rankMemoryFiles([{ name: '样板A.md', text: boiler }], '更新时间 消息统计', { limit: 3 }).length === 0)
-  checkTrue('stripDigestBoilerplate 剥离样板行', (() => {
-    const s = stripDigestBoilerplate(boiler)
-    return s.includes('[用户] 黑苹果 QEMU 安装') && !s.includes('摘要来源') && !s.includes('更新时间') && !s.includes('会话 ID')
-  })())
-  checkTrue('normalizeMemoryQuery 剔除停用词', normalizeMemoryQuery('重启服务 验证 是否已更新') === '重启服务 验证 是否已')
-  const notice = buildRecallNotice(ranked)
-  checkTrue('buildRecallNotice 含文件清单与注记', notice.reasoning.includes('发布相关.md') && notice.reasoning.includes('构建相关.md') && notice.text.length > 0)
-}
-
 // 规则 6 摘要净化（lib/digest.js）
 {
   checkTrue('isNoise 识别 runtime context 快照', isNoise('Current runtime context. This snapshot supersedes earlier runtime-context snapshots.'))
@@ -295,15 +267,16 @@ console.log('== restrict-discipline enforce 冒烟测试 ==')
   check('禁用时 代理 → 放行', await e(exec('pwsh', { command: 'git config --global http.proxy http://x' })), undefined)
 }
 
-// v0.6 规则四元重构（lib/rules.js）
+// v0.7 规则四元重构（lib/rules.js，claude-code 式记忆）
 {
   checkTrue('规则文本含 4 条主规则', ['1. 强制约束', '2. Token 节约', '3. 会话记忆', '4. 编码纪律'].every((h) => RULES_TEXT.includes(h)))
-  checkTrue('规则文本不再含旧 16 条编号', !RULES_TEXT.includes('16. 会话记忆自动注入') && !RULES_TEXT.includes('【Token 节约补充'))
-  checkTrue('规则文本含新旧子项编号', RULES_TEXT.includes('1.1 文件分类') && RULES_TEXT.includes('1.7 遍历排除') && RULES_TEXT.includes('2.7 失败收敛') && RULES_TEXT.includes('3.3 显式记忆工具') && RULES_TEXT.includes('4.4 目标驱动'))
-  checkTrue('规则文本含记忆 Markdown 说明', RULES_TEXT.includes('memory/*.md'))
+  checkTrue('规则文本不再描述旧检索机制', !RULES_TEXT.includes('BM25') && !RULES_TEXT.includes('自动检索') && !RULES_TEXT.includes('memoryTopK') && !RULES_TEXT.includes('recall_memory 检索'))
+  checkTrue('规则文本含 CLAUDE.md 项目记忆说明', RULES_TEXT.includes('memory/CLAUDE.md') && RULES_TEXT.includes('# 快捷召回') && RULES_TEXT.includes('会话摘要'))
+  checkTrue('规则文本声明旧工具已移除', RULES_TEXT.includes('已删除'))
+  checkTrue('规则文本子项编号 3.1–3.4', ['3.1 项目记忆文件', '3.2 # 快捷召回', '3.3 会话摘要', '3.4 旧机制已移除'].every((s) => RULES_TEXT.includes(s)))
 }
 
-// v0.6 memory/*.md 记忆文档纯逻辑（lib/memfile.js）
+// v0.6 memory/*.md 记忆文档纯逻辑（lib/memfile.js）+ v0.7 CLAUDE.md 追加器
 {
   const iso = '2026-09-02T00:00:00.000Z'
   const line = entryLine({ id: 'mem-a1', iso, content: '决策：用 Markdown 存记忆', source: 'sess-1', turn: 3, tags: ['决策'] })
@@ -314,21 +287,23 @@ console.log('== restrict-discipline enforce 冒烟测试 ==')
   const base = '# 会话摘要 — A\n\n## 消息统计\n\n用户 1 条\n'
   let t = appendEntry(base, line)
   checkTrue('appendEntry 追加到记忆条目节', t.includes('## 记忆条目') && t.includes('- [mem-a1]') && t.includes('## 消息统计'))
-  checkTrue('countEntries 计数', countEntries(t) === 1)
   const s = splitFile(t)
   checkTrue('splitFile 分节', s.digest.length > 0 && s.entries.length === 1 && s.archived.length === 0)
-  checkTrue('firstTitle 提取标题', firstTitle(t) === '会话摘要 — A')
-  const r = forgetEntry(t, 'mem-a1')
-  checkTrue('forgetEntry 软删移入归档', r.moved === 1 && r.text.includes('## 已归档条目') && countEntries(r.text) === 0)
-  const g = purgeArchived(r.text, Date.parse('2026-12-01T00:00:00.000Z'), 30)
-  checkTrue('purgeArchived 超期清除', g.purged === 1 && !g.text.includes('mem-a1'))
-  const keep = purgeArchived(r.text, Date.parse('2026-09-10T00:00:00.000Z'), 30)
-  checkTrue('purgeArchived 未超期保留', keep.purged === 0 && keep.text.includes('mem-a1'))
   checkTrue('rebuildFile 全空返回空串', rebuildFile({ digest: [], entries: [], archived: [] }) === '')
   const merged = rebuildFile({ digest: ['# 会话摘要 — A2'], entries: s.entries, archived: s.archived })
   checkTrue('digest 重写保留记忆条目节', merged.includes('# 会话摘要 — A2') && merged.includes('- [mem-a1]'))
   const legacy = rebuildFile({ digest: [], entries: ['- [mem-x] 2026-09-01T00:00:00.000Z 只有条目'], archived: [] })
   checkTrue('rebuildFile 无 digest 时仍保留条目', legacy.startsWith('## 记忆条目'))
+
+  // v0.7 appendMemoryEntry：CLAUDE.md 追加器——保留原文件任意结构（含空行）
+  const doc = '# 部署流程\n打 tag 推送触发 CI。\n\n## 记忆条目\n\n- 旧条目\n'
+  const after = appendMemoryEntry(doc, line)
+  checkTrue('appendMemoryEntry 追加条目且保留正文空行', after.includes('打 tag 推送触发 CI。\n\n') && after.includes('- 旧条目') && after.includes('- [mem-a1]'))
+  checkTrue('appendMemoryEntry 无记忆节时在尾创建', (() => {
+    const r = appendMemoryEntry('# 只有正文\n段落内容', '- [mem-x] 2026-09-01T00:00:00.000Z 新条目')
+    return r.includes('## 记忆条目') && r.includes('- [mem-x]') && r.includes('段落内容')
+  })())
+  checkTrue('appendMemoryEntry 空行返回原文', appendMemoryEntry(doc, '  ') === doc.replace(/\r\n/g, '\n'))
 }
 
 // v0.6 秘密脱敏（lib/redact.js）
@@ -344,23 +319,28 @@ console.log('== restrict-discipline enforce 冒烟测试 ==')
   checkTrue('redactSecrets 明文原样返回', redactSecrets('npm run build 正常文本').text === 'npm run build 正常文本')
 }
 
-// v0.6 渐进披露索引块 + 扩展名兼容排除 + 时间衰减（lib/memory.js）
+// v0.7 项目记忆纯逻辑（lib/memload.js，claude-code 式确定性加载 + # 快捷召回）
 {
-  const files = [
-    { name: '发布相关.md', text: '# 会话摘要 — 发布 v0.4\n## 最近对话\n[用户] 打 tag 推送触发 CI' },
-    { name: '本会话.md', text: '# 会话摘要 — 本会话自身\n内容' },
-    { name: '旧会话.md', text: '# 会话摘要 — 旧会话\n其他内容' },
-  ]
-  const r = rankMemoryFiles(files, '如何发布 tag 并推送触发 CI', { limit: 3, excludeName: '本会话.md' })
-  checkTrue('excludeName 排除本会话', r.length === 1 && r[0].name === '发布相关.md')
-  const blk = renderMemoryIndex(r)
-  checkTrue('renderMemoryIndex 渐进披露：只注标题一行', blk.startsWith('【历史记忆') && blk.includes('发布相关.md') && blk.length < 700 && !blk.includes('打 tag 推送触发 CI'))
-  checkTrue('renderMemoryIndex 空输入返回空串', renderMemoryIndex([]) === '')
-  const oldF = { name: '旧文件.md', text: '# A\n发布 v0.4.0 的旧流程细节', ts: Date.now() - 200 * 86400000 }
-  const newF = { name: '新文件.md', text: '# B\n发布 v0.4.0 的新流程', ts: Date.now() }
-  const ranked2 = rankMemoryFiles([oldF, newF], '发布 v0.4.0 流程', { limit: 2 })
-  checkTrue('时间衰减：新记忆排前', ranked2.length === 2 && ranked2[0].name === '新文件.md')
-  checkTrue('rankMemoryFiles 无 ts 不衰减（旧行为）', rankMemoryFiles([oldF], '发布 v0.4.0 流程', { limit: 1 }).length === 1)
+  const doc = '# 部署流程\n打 tag 推送触发 CI。\n\n## 记忆条目\n\n- 条目一\n'
+  const { preamble, sections } = splitSections(doc)
+  checkTrue('splitSections 切分一级标题条目', preamble === '' && sections.length === 1 && sections[0].token === '部署流程' && sections[0].text.includes('打 tag'))
+  checkTrue('detectShortcuts 提取 #token 并去重', JSON.stringify(detectShortcuts('请参考 #部署流程 和 #部署流程 以及 #a')) === JSON.stringify(['部署流程']))
+  checkTrue('detectShortcuts 忽略过短 token 与标题语法', JSON.stringify(detectShortcuts('# 部署流程')) === JSON.stringify([]))
+  checkTrue('detectShortcuts 大小写不敏感去重', JSON.stringify(detectShortcuts('#Build 与 #build')) === JSON.stringify(['Build']))
+  const hits = recallSections(doc, '部署流程')
+  checkTrue('recallSections 精确命中条目', hits.length === 1 && hits[0].text.startsWith('# 部署流程'))
+  checkTrue('recallSections 大小写不敏感', recallSections('# Build\nnpm run build', 'BUILD').length === 1)
+  checkTrue('recallSections 未命中返回空', recallSections(doc, '不存在').length === 0)
+  const cap = capLoad('x'.repeat(100), 60)
+  checkTrue('capLoad 超限截断并标注', cap.truncated && cap.text.length === 60 && cap.total === 100)
+  checkTrue('capLoad 未超限原样', capLoad('hello', 60).text === 'hello' && !capLoad('hello', 60).truncated)
+  const blk = renderLoadBlock('# 部署流程\n内容', 1000)
+  checkTrue('renderLoadBlock 注入块含头与内容', blk.startsWith('【项目记忆') && blk.includes('memory/CLAUDE.md') && blk.includes('内容'))
+  checkTrue('renderLoadBlock 空输入返回空', renderLoadBlock('', 1000) === '')
+  checkTrue('renderLoadBlock 超限加截断注记', renderLoadBlock('x'.repeat(300), 100).includes('截断'))
+  const rblk = renderRecallBlock(hits, '部署流程')
+  checkTrue('renderRecallBlock 召回块含条目名', rblk.startsWith('【# 快捷召回：部署流程') && rblk.includes('打 tag'))
+  checkTrue('renderRecallBlock 空命中返回空', renderRecallBlock([], 'x') === '')
 }
 
 console.log('')
