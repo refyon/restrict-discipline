@@ -1,6 +1,6 @@
 {
   "name": "restrict-discipline",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "DSH behavior-regulation plugin: four rules (mandatory constraints / token saving / CLAUDE.md-style project memory / coding discipline). Blocks project-root file creation, protects the root .env, blocks proxy-setting changes, asks confirmation for out-of-workspace modifications, records operations as runnable scripts, and keeps a Claude Code-style memory/CLAUDE.md project memory (auto-load on session start, # shortcut recall, remember tool). Toggleable from Settings -> Plugins.",
   "type": "module",
   "main": "lib/index.js",
