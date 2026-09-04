@@ -2,7 +2,12 @@
 // 验证 lib/index.js 的 apply() 接线：工具注册（find/record/remember）、
 // 项目记忆自动加载（agent/session-start → inject）、# 快捷召回（session/event）、
 // digest 落盘、规则文本注入、设置开关。运行：node test/integration-host.mjs
-import { apply } from '../lib/index.js'
+import { register } from 'node:module'
+// 零依赖自包含：lib/index.js 顶层 import 的 host 运行时包（@deepseek-ai/*）在无
+// node_modules 环境（CI）解析失败，此处先把它们映射为本地桩，再动态导入 index.js
+// （静态 import 会在本文件代码执行前完成解析，钩子来不及生效）。
+register(new URL('./dsh-stub-hooks.mjs', import.meta.url))
+const { apply } = await import('../lib/index.js')
 
 let pass = 0
 let fail = 0
