@@ -267,16 +267,16 @@ console.log('== restrict-discipline enforce 冒烟测试 ==')
   check('禁用时 代理 → 放行', await e(exec('pwsh', { command: 'git config --global http.proxy http://x' })), undefined)
 }
 
-// v0.7 规则四元重构（lib/rules.js，claude-code 式记忆）
+// 规则文本（lib/rules.js，4 条主规则）
 {
   checkTrue('规则文本含 4 条主规则', ['1. 强制约束', '2. Token 节约', '3. 会话记忆', '4. 编码纪律'].every((h) => RULES_TEXT.includes(h)))
   checkTrue('规则文本不再描述旧检索机制', !RULES_TEXT.includes('BM25') && !RULES_TEXT.includes('自动检索') && !RULES_TEXT.includes('memoryTopK') && !RULES_TEXT.includes('recall_memory 检索'))
-  checkTrue('规则文本含 CLAUDE.md 项目记忆说明', RULES_TEXT.includes('memory/CLAUDE.md') && RULES_TEXT.includes('# 快捷召回') && RULES_TEXT.includes('会话摘要'))
+  checkTrue('规则文本含项目记忆说明', RULES_TEXT.includes('memory/MEMORY.md') && RULES_TEXT.includes('# 快捷召回') && RULES_TEXT.includes('会话摘要'))
   checkTrue('规则文本声明旧工具已移除', RULES_TEXT.includes('已删除'))
   checkTrue('规则文本子项编号 3.1–3.4', ['3.1 项目记忆文件', '3.2 # 快捷召回', '3.3 会话摘要', '3.4 旧机制已移除'].every((s) => RULES_TEXT.includes(s)))
 }
 
-// v0.6 memory/*.md 记忆文档纯逻辑（lib/memfile.js）+ v0.7 CLAUDE.md 追加器
+// memory/*.md 记忆文档纯逻辑（lib/memfile.js）+ 项目记忆文件追加器
 {
   const iso = '2026-09-02T00:00:00.000Z'
   const line = entryLine({ id: 'mem-a1', iso, content: '决策：用 Markdown 存记忆', source: 'sess-1', turn: 3, tags: ['决策'] })
@@ -295,7 +295,7 @@ console.log('== restrict-discipline enforce 冒烟测试 ==')
   const legacy = rebuildFile({ digest: [], entries: ['- [mem-x] 2026-09-01T00:00:00.000Z 只有条目'], archived: [] })
   checkTrue('rebuildFile 无 digest 时仍保留条目', legacy.startsWith('## 记忆条目'))
 
-  // v0.7 appendMemoryEntry：CLAUDE.md 追加器——保留原文件任意结构（含空行）
+  // appendMemoryEntry：项目记忆文件追加器——保留原文件任意结构（含空行）
   const doc = '# 部署流程\n打 tag 推送触发 CI。\n\n## 记忆条目\n\n- 旧条目\n'
   const after = appendMemoryEntry(doc, line)
   checkTrue('appendMemoryEntry 追加条目且保留正文空行', after.includes('打 tag 推送触发 CI。\n\n') && after.includes('- 旧条目') && after.includes('- [mem-a1]'))
@@ -306,7 +306,7 @@ console.log('== restrict-discipline enforce 冒烟测试 ==')
   checkTrue('appendMemoryEntry 空行返回原文', appendMemoryEntry(doc, '  ') === doc.replace(/\r\n/g, '\n'))
 }
 
-// v0.6 秘密脱敏（lib/redact.js）
+// 秘密脱敏（lib/redact.js）
 {
   const c = redactSecrets('api key: sk-abcdef1234567890 和 Bearer xyz1234567890abcde')
   checkTrue('redactSecrets 脱敏 sk-/Bearer', !c.text.includes('sk-abcdef') && !c.text.includes('xyz1234567') && c.count >= 2 && c.text.includes('<REDACTED:'))
@@ -319,7 +319,7 @@ console.log('== restrict-discipline enforce 冒烟测试 ==')
   checkTrue('redactSecrets 明文原样返回', redactSecrets('npm run build 正常文本').text === 'npm run build 正常文本')
 }
 
-// v0.7 项目记忆纯逻辑（lib/memload.js，claude-code 式确定性加载 + # 快捷召回）
+// 项目记忆纯逻辑（lib/memload.js：确定性加载 + # 快捷召回）
 {
   const doc = '# 部署流程\n打 tag 推送触发 CI。\n\n## 记忆条目\n\n- 条目一\n'
   const { preamble, sections } = splitSections(doc)
@@ -335,7 +335,8 @@ console.log('== restrict-discipline enforce 冒烟测试 ==')
   checkTrue('capLoad 超限截断并标注', cap.truncated && cap.text.length === 60 && cap.total === 100)
   checkTrue('capLoad 未超限原样', capLoad('hello', 60).text === 'hello' && !capLoad('hello', 60).truncated)
   const blk = renderLoadBlock('# 部署流程\n内容', 1000)
-  checkTrue('renderLoadBlock 注入块含头与内容', blk.startsWith('【项目记忆') && blk.includes('memory/CLAUDE.md') && blk.includes('内容'))
+  checkTrue('renderLoadBlock 注入块含头与内容', blk.startsWith('【项目记忆') && blk.includes('memory/MEMORY.md') && blk.includes('内容'))
+  checkTrue('renderLoadBlock 旧名回退时附重命名提示', renderLoadBlock(doc, 1000, true).includes('memory/CLAUDE.md'))
   checkTrue('renderLoadBlock 空输入返回空', renderLoadBlock('', 1000) === '')
   checkTrue('renderLoadBlock 超限加截断注记', renderLoadBlock('x'.repeat(300), 100).includes('截断'))
   const rblk = renderRecallBlock(hits, '部署流程')

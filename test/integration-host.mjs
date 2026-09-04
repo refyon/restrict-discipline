@@ -1,6 +1,6 @@
 // test/integration-host.mjs — host 半边集成自检（零依赖：mock ctx + 内存 fs）。
 // 验证 lib/index.js 的 apply() 接线：工具注册（find/record/remember）、
-// CLAUDE.md 自动加载（agent/session-start → inject）、# 快捷召回（session/event）、
+// 项目记忆自动加载（agent/session-start → inject）、# 快捷召回（session/event）、
 // digest 落盘、规则文本注入、设置开关。运行：node test/integration-host.mjs
 import { apply } from '../lib/index.js'
 
@@ -90,7 +90,7 @@ const execCtx = (a = agent) => ({ agent: a })
 
 apply(ctx)
 
-console.log('== restrict-discipline host 集成自检（v0.7 claude-code 记忆路线）==')
+console.log('== restrict-discipline host 集成自检（项目记忆路线）==')
 
 // 1) 工具注册与规则文本
 {
@@ -99,23 +99,23 @@ console.log('== restrict-discipline host 集成自检（v0.7 claude-code 记忆�
   check('注册 3 个工具（检索/管理类记忆工具已移除）', JSON.stringify(names) === JSON.stringify(expect))
   const texts = sections.map((s) => (typeof s.text === 'function' ? s.text() : '')).join('\n')
   check('系统提示规则文本为 4 条主规则', texts.includes('1. 强制约束') && texts.includes('4. 编码纪律') && !texts.includes('16. 会话记忆自动注入'))
-  check('规则 3 描述 CLAUDE.md 机制', texts.includes('memory/CLAUDE.md') && texts.includes('# 快捷召回'))
+  check('规则 3 描述项目记忆机制', texts.includes('memory/MEMORY.md') && texts.includes('# 快捷召回'))
 }
 
 const def = (n) => toolsDefs.find((t) => t.name === n)
 
-// 2) remember → 固定路径写入 memory/CLAUDE.md（脱敏 + 来源审计）
+// 2) remember → 固定路径写入 memory/MEMORY.md（脱敏 + 来源审计）
 {
   const out = await def('remember').execute(
     { content: '发布流程：先打 tag 再推送。密钥 sk-abcdef1234567890 勿外传', tags: '发布,流程' },
     execCtx())
-  check('remember 返回 id 与脱敏提示', /已记住 mem-/.test(out) && out.includes('已脱敏') && out.includes('memory\\CLAUDE.md'))
-  const text = files.get('C:\\ws\\memory\\CLAUDE.md')
-  check('remember 写入 memory/CLAUDE.md 记忆条目节', !!text && text.includes('## 记忆条目') && text.includes('来源: session-int-1') && text.includes('轮次 2'))
+  check('remember 返回 id 与脱敏提示', /已记住 mem-/.test(out) && out.includes('已脱敏') && out.includes('memory\\MEMORY.md'))
+  const text = files.get('C:\\ws\\memory\\MEMORY.md')
+  check('remember 写入 memory/MEMORY.md 记忆条目节', !!text && text.includes('## 记忆条目') && text.includes('来源: session-int-1') && text.includes('轮次 2'))
   check('落盘前已脱敏密钥', !text.includes('sk-abcdef1234567890') && text.includes('<REDACTED:api_key>'))
 }
 
-// 3) digest：agent/status idle → 写摘要到 memory/<会话>.md，不覆盖 CLAUDE.md
+// 3) digest：agent/status idle → 写摘要到 memory/<会话>.md，不覆盖项目记忆文件
 {
   const statusListeners = handlers.get('agent/status') || []
   check('注册 agent/status 监听', statusListeners.length === 1)
@@ -125,11 +125,11 @@ const def = (n) => toolsDefs.find((t) => t.name === n)
   check('idle 摘要写入 memory/<会话>.md', !!digestFile)
   const text = files.get(digestFile)
   check('摘要含 Markdown 分节', text.includes('# 会话摘要 — 集成测试会话') && text.includes('## 消息统计') && text.includes('## 最近对话'))
-  const cm = files.get('C:\\ws\\memory\\CLAUDE.md') || ''
-  check('摘要不覆盖 CLAUDE.md', cm.includes('## 记忆条目') && cm.includes('发布流程'))
+  const cm = files.get('C:\\ws\\memory\\MEMORY.md') || ''
+  check('摘要不覆盖项目记忆文件', cm.includes('## 记忆条目') && cm.includes('发布流程'))
 }
 
-// 4) agent/session-start → 自动加载 memory/CLAUDE.md 并 agent.inject（claude-code 式确定性注入）
+// 4) agent/session-start → 自动加载 memory/MEMORY.md 并 agent.inject（确定性注入）
 {
   const injected = []
   agent.inject = (msg) => injected.push(msg)
@@ -137,7 +137,7 @@ const def = (n) => toolsDefs.find((t) => t.name === n)
   check('注册 agent/session-start 监听', loadListeners.length === 1)
   for (const h of loadListeners) h({ agent })
   await sleep(150)
-  check('CLAUDE.md 内容经 agent.inject 注入', injected.length >= 1 && injected[0].content[0].text.includes('【项目记忆') && injected[0].content[0].text.includes('发布流程'))
+  check('项目记忆内容经 agent.inject 注入', injected.length >= 1 && injected[0].content[0].text.includes('【项目记忆') && injected[0].content[0].text.includes('发布流程'))
   check('注入 source 为 plugin + instructions form', injected[0].source.kind === 'plugin' && injected[0].source.plugin === 'restrict-discipline' && injected[0].source.form === 'instructions')
 }
 
@@ -147,12 +147,12 @@ const def = (n) => toolsDefs.find((t) => t.name === n)
   agent.session.append = async (type, data) => appended.push({ type, data })
   const evListeners = handlers.get('session/event') || []
   check('注册 session/event 监听', evListeners.length === 1)
-  // CLAUDE.md 目前无一级标题条目 → 无命中不注入
+  // 项目记忆文件目前无一级标题条目 → 无命中不注入
   for (const h of evListeners) h(agent.session, { type: 'user/message', data: { id: 'u1', role: 'user', content: [{ type: 'text', text: '参考 #发布流程 的做法' }], source: { kind: 'user' } } })
   await sleep(150)
   check('无命中条目时不注入', appended.length === 0)
-  // 预置带 # 一级标题的 CLAUDE.md
-  files.set('C:\\ws\\memory\\CLAUDE.md', '# 发布流程\n先打 tag 再推送。\n\n## 记忆条目\n\n- 条目')
+  // 预置带 # 一级标题的项目记忆文件
+  files.set('C:\\ws\\memory\\MEMORY.md', '# 发布流程\n先打 tag 再推送。\n\n## 记忆条目\n\n- 条目')
   for (const h of evListeners) h(agent.session, { type: 'user/message', data: { id: 'u2', role: 'user', content: [{ type: 'text', text: '参考 #发布流程' }], source: { kind: 'user' } } })
   await sleep(150)
   check('命中条目注入 user/message 召回块', appended.length === 1 && appended[0].type === 'user/message'
@@ -162,6 +162,30 @@ const def = (n) => toolsDefs.find((t) => t.name === n)
   for (const h of evListeners) h(agent.session, { type: 'user/message', data: { id: 'u3', role: 'user', content: [{ type: 'text', text: '#发布流程 再来' }], source: { kind: 'plugin', plugin: 'restrict-discipline' } } })
   await sleep(150)
   check('非用户来源消息不触发召回（防递归）', appended.length === 1)
+}
+
+// 6) 兼容回退：仅存旧名 CLAUDE.md 时——启动加载与 # 召回回退读取；remember 合并并写入新名
+{
+  files.delete('C:\\ws\\memory\\MEMORY.md')
+  files.set('C:\\ws\\memory\\CLAUDE.md', '# 旧项目条目\n旧内容。\n\n## 记忆条目\n\n- 旧条目')
+  const injected2 = []
+  agent.inject = (msg) => injected2.push(msg)
+  const loadListeners = handlers.get('agent/session-start') || []
+  for (const h of loadListeners) h({ agent })
+  await sleep(150)
+  check('旧名回退：自动加载旧文件并提示重命名', injected2.length >= 1
+    && injected2[0].content[0].text.includes('【项目记忆 memory/MEMORY.md')
+    && injected2[0].content[0].text.includes('旧项目条目')
+    && injected2[0].content[0].text.includes('memory/CLAUDE.md'))
+  const appended2 = []
+  agent.session.append = async (type, data) => appended2.push({ type, data })
+  const evListeners = handlers.get('session/event') || []
+  for (const h of evListeners) h(agent.session, { type: 'user/message', data: { id: 'u4', role: 'user', content: [{ type: 'text', text: '参考 #旧项目条目' }], source: { kind: 'user' } } })
+  await sleep(150)
+  check('旧名回退：# 召回命中旧文件条目', appended2.length === 1 && appended2[0].data.content[0].text.includes('旧内容'))
+  const out2 = await def('remember').execute({ content: '兼容写入' }, execCtx())
+  const newText = files.get('C:\\ws\\memory\\MEMORY.md')
+  check('旧名回退：remember 合并旧内容并写入新名文件', !!newText && newText.includes('旧项目条目') && newText.includes('兼容写入') && out2.includes('memory\\MEMORY.md'))
 }
 
 console.log('')

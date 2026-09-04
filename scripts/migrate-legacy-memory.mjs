@@ -1,5 +1,5 @@
-// scripts/migrate-legacy-memory.mjs — 一次性迁移（v0.6 → v0.7）：
-// 把旧 memory/*.md 中「## 记忆条目」节的条目行并入 memory/CLAUDE.md 的
+// scripts/migrate-legacy-memory.mjs — 一次性迁移：
+// 把旧 memory/*.md（含旧名 CLAUDE.md）中「## 记忆条目」节的条目行并入 memory/MEMORY.md 的
 // 「## 记忆条目」节（保留来源审计行原样）；原文件不修改（保留历史摘要）。
 // 用法：node scripts/migrate-legacy-memory.mjs <项目根目录>
 import { readdir, readFile, writeFile, stat } from 'node:fs/promises'
@@ -8,7 +8,7 @@ import { splitFile, appendMemoryEntry } from '../lib/memfile.js'
 
 const root = process.argv[2] ? String(process.argv[2]) : '.'
 const memDir = join(root, 'memory')
-const target = join(memDir, 'CLAUDE.md')
+const target = join(memDir, 'MEMORY.md')
 
 let targetText = ''
 try { targetText = await readFile(target, 'utf8') } catch (e) { /* 目标不存在则新建 */ }
@@ -22,7 +22,7 @@ try { entries = await readdir(memDir) } catch (e) {
 let merged = 0
 const movedFrom = []
 for (const name of entries) {
-  if (name === 'CLAUDE.md' || extname(name).toLowerCase() !== '.md') continue
+  if (name === 'MEMORY.md' || extname(name).toLowerCase() !== '.md') continue
   const p = join(memDir, name)
   let st
   try { st = await stat(p) } catch (e) { continue }
@@ -47,6 +47,6 @@ if (merged === 0) {
 targetText = targetText.replace(/\n+$/, '\n')
 
 await writeFile(target, targetText, 'utf8')
-console.log('已迁移 ' + merged + ' 条 → memory/CLAUDE.md')
+console.log('已迁移 ' + merged + ' 条 → memory/MEMORY.md')
 console.log('来源：' + movedFrom.join('、'))
 console.log('原文件未修改（保留历史摘要；旧摘要不再参与自动注入，仅存归档）')
