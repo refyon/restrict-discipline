@@ -42,6 +42,10 @@ if (merged === 0) {
   process.exit(0)
 }
 
+// 去尾随空行（只保留一个结尾换行）。编码安全：全程 node fs 以 UTF-8 读写；
+// 切勿用 Windows PowerShell 5.1 的 Set-Content -Encoding UTF8 处理本文件（会写坏中文）。
+targetText = targetText.replace(/\n+$/, '\n')
+
 await writeFile(target, targetText, 'utf8')
 console.log('已迁移 ' + merged + ' 条 → memory/CLAUDE.md')
 console.log('来源：' + movedFrom.join('、'))
